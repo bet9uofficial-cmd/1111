@@ -199,7 +199,7 @@ bot.command('start', (ctx) => {
   
   let message = '🧧 Welcome to Lucky Red Packet!';
   let buttonText = '💰 Create Red Packet';
-  let url = webAppUrl || 'https://google.com';
+  let url = webAppUrl || 'https://1111-pearl-mu.vercel.app/';
 
   if (startPayload) {
     message = '🧧 Someone sent you a Red Packet! Click below to open it.';
@@ -218,7 +218,7 @@ bot.telegram.setChatMenuButton({
   menuButton: {
     type: 'web_app',
     text: '🧧 Lucky Packet',
-    web_app: { url: webAppUrl || 'https://google.com' }
+    web_app: { url: webAppUrl || 'https://1111-pearl-mu.vercel.app/' }
   }
 }).catch(e => console.error("Failed to set menu button:", e));
 
