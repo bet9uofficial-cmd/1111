@@ -20,7 +20,6 @@ export interface RedPacketConfig {
 }
 
 export enum GameStage {
-  LOADING = 'LOADING',
   CREATE = 'CREATE',
   CLOSED = 'CLOSED',
   OPENING = 'OPENING',

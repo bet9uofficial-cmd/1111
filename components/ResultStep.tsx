@@ -1,6 +1,7 @@
+
 import React, { useEffect, useState } from 'react';
 import { RedPacketConfig, PacketRecord, AIAnalysis } from '../types';
-import { Crown, Star, Share2, RefreshCw } from 'lucide-react';
+import { Crown, Star, Share2, RefreshCw, CheckCheck, Copy } from 'lucide-react';
 import { generateFortune } from '../services/geminiService';
 
 interface Props {
@@ -13,15 +14,14 @@ interface Props {
 export const ResultStep: React.FC<Props> = ({ config, records, currentUserId, onReset }) => {
   const [aiFortune, setAiFortune] = useState<AIAnalysis | null>(null);
   const [loadingFortune, setLoadingFortune] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const myRecord = records.find(r => r.userId === currentUserId);
   const isFinished = records.length >= config.totalShares;
   
-  // Sort records: Best luck first (Leaderboard style)
   const sortedRecords = [...records].sort((a, b) => b.amount - a.amount);
 
   useEffect(() => {
-    // Optimization: Only fetch if we have a record and haven't fetched yet.
     if (myRecord && !aiFortune && !loadingFortune) {
       setLoadingFortune(true);
       generateFortune(myRecord.amount, config.totalAmount)
@@ -30,6 +30,23 @@ export const ResultStep: React.FC<Props> = ({ config, records, currentUserId, on
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myRecord?.amount, myRecord?.userId]); 
+
+  const handleShare = () => {
+    // Generate the shareable link with the config encoded
+    const payload = btoa(JSON.stringify(config));
+    const shareUrl = `${window.location.origin}${window.location.pathname}?payload=${payload}`;
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      
+      // If in Telegram, we can also try to open the share sheet (optional enhancement)
+      // (window as any).Telegram?.WebApp?.switchInlineQuery("Sent a Red Packet", ['users', 'groups']);
+    }).catch(err => {
+      console.error('Failed to copy', err);
+    });
+  };
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
@@ -138,9 +155,12 @@ export const ResultStep: React.FC<Props> = ({ config, records, currentUserId, on
             <RefreshCw size={18} />
             New Game
          </button>
-         <button className="flex-1 py-3 rounded-lg bg-red-600 text-white font-medium flex items-center justify-center gap-2 hover:bg-red-700 shadow-md transition-colors active:scale-95">
-            <Share2 size={18} />
-            Share
+         <button 
+           onClick={handleShare}
+           className={`flex-1 py-3 rounded-lg font-medium flex items-center justify-center gap-2 shadow-md transition-all active:scale-95 ${copied ? 'bg-green-600 text-white' : 'bg-red-600 text-white hover:bg-red-700'}`}
+         >
+            {copied ? <CheckCheck size={18} /> : <Share2 size={18} />}
+            {copied ? 'Link Copied!' : 'Share Packet'}
          </button>
       </div>
     </div>
