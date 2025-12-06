@@ -10,7 +10,8 @@ import { createClient } from '@supabase/supabase-js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const token = process.env.BOT_TOKEN;
+// Updated with user provided token
+const token = process.env.BOT_TOKEN || '8363912036:AAE7WRgBEj5VVpI7M7HT09j44v1Km6l8XdQ';
 const webAppUrl = process.env.WEBAPP_URL;
 
 // Supabase Configuration
