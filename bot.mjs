@@ -59,12 +59,11 @@ const generateAmounts = (total, shares) => {
 
 // --- EXPRESS SERVER (API) ---
 const app = express();
-// Providing explicit path '/' helps TypeScript overload resolution
-app.use('/', cors());
-app.use('/', express.json());
+app.use(cors());
+app.use(express.json());
 
 // 1. Serve Static Files
-app.use('/', express.static(path.join(__dirname, 'dist')));
+app.use(express.static(path.join(__dirname, 'dist')));
 
 // 2. API Routes
 
