@@ -1,0 +1,237 @@
+import { Telegraf, Markup } from 'telegraf';
+import express from 'express';
+import cors from 'cors';
+import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { createClient } from '@supabase/supabase-js';
+
+// --- CONFIGURATION ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const token = process.env.BOT_TOKEN;
+const webAppUrl = process.env.WEBAPP_URL;
+
+// Supabase Configuration
+// We prioritize environment variables, but fall back to the provided credentials for immediate functionality.
+const supabaseUrl = process.env.SUPABASE_URL || 'https://fkxayehvmgcevihuofag.supabase.co';
+const supabaseKey = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZreGF5ZWh2bWdjZXZpaHVvZmFnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDg3OTc5NywiZXhwIjoyMDgwNDU1Nzk3fQ.2CkjAentP171gXlu-8eim7zM_9NvFyIctdw7atf9TWU';
+
+const PORT = process.env.PORT || 3000;
+
+if (!token) {
+  console.error('Error: BOT_TOKEN is missing.');
+  // We exit if no token, as the bot cannot function.
+  // @ts-ignore
+  process.exit(1);
+}
+
+// --- DATABASE CONNECTION ---
+let supabase;
+if (!supabaseUrl || !supabaseKey) {
+  console.warn('⚠️ WARNING: SUPABASE_URL or SUPABASE_KEY is missing. Data will NOT be saved.');
+} else {
+  try {
+    supabase = createClient(supabaseUrl, supabaseKey);
+    console.log('✅ Supabase client initialized');
+  } catch (err) {
+    console.error('❌ Failed to initialize Supabase:', err);
+  }
+}
+
+// --- HELPER ALGORITHM ---
+const generateAmounts = (total, shares) => {
+  let remainAmount = total;
+  let remainShares = shares;
+  const results = [];
+  for (let i = 0; i < shares - 1; i++) {
+    const max = (remainAmount / remainShares) * 2;
+    let money = Math.max(0.01, Math.random() * max);
+    money = Math.floor(money * 100) / 100;
+    results.push(money);
+    remainAmount -= money;
+    remainShares--;
+  }
+  results.push(Math.round(remainAmount * 100) / 100);
+  return results.sort(() => Math.random() - 0.5); // Shuffle
+};
+
+// --- EXPRESS SERVER (API) ---
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// 1. Serve Static Files
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// 2. API Routes
+
+// Create Packet
+app.post('/api/create', async (req, res) => {
+  try {
+    const { totalAmount, totalShares, wishing, creatorId } = req.body;
+    const id = uuidv4();
+    const amounts = generateAmounts(parseFloat(totalAmount), parseInt(totalShares));
+    
+    if (supabase) {
+      const { error } = await supabase
+        .from('packets')
+        .insert([{
+          id,
+          creator_id: creatorId,
+          config: { totalAmount, totalShares, wishing },
+          remaining_amounts: amounts,
+          records: [], // Init empty array
+          created_at: Date.now()
+        }]);
+
+      if (error) throw error;
+    }
+
+    res.json({ id });
+  } catch (err) {
+    console.error("Create Error:", err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Get Packet Info
+app.get('/api/packet/:id', async (req, res) => {
+  try {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+
+    const { data: packet, error } = await supabase
+      .from('packets')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (error || !packet) return res.status(404).json({ error: 'Packet not found' });
+    
+    const safeData = {
+      id: packet.id,
+      creatorId: packet.creator_id,
+      config: packet.config,
+      records: packet.records || [],
+      createdAt: packet.created_at,
+      isFinished: packet.remaining_amounts.length === 0,
+      sharesLeft: packet.remaining_amounts.length
+    };
+    
+    res.json(safeData);
+  } catch (err) {
+    console.error("Get Error:", err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Grab Packet
+app.post('/api/packet/:id/grab', async (req, res) => {
+  try {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+
+    // 1. Fetch current state
+    const { data: packet, error: fetchError } = await supabase
+      .from('packets')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fetchError || !packet) return res.status(404).json({ error: 'Packet not found' });
+
+    const { userId, userName, avatarUrl } = req.body;
+    const records = packet.records || [];
+    const remainingAmounts = packet.remaining_amounts || [];
+
+    // 2. Check Logic
+    const existingRecord = records.find(r => r.userId === userId);
+    if (existingRecord) {
+      return res.json({ record: existingRecord, status: 'ALREADY_GRABBED' });
+    }
+
+    if (remainingAmounts.length === 0) {
+      return res.json({ status: 'EMPTY' });
+    }
+
+    // 3. Update Data
+    const amount = remainingAmounts.pop();
+    
+    const newRecord = {
+      userId,
+      userName,
+      avatarUrl,
+      amount,
+      timestamp: Date.now(),
+      isBestLuck: false 
+    };
+    records.push(newRecord);
+
+    // 4. Save back to DB
+    const { error: updateError } = await supabase
+      .from('packets')
+      .update({
+        remaining_amounts: remainingAmounts,
+        records: records
+      })
+      .eq('id', packet.id);
+
+    if (updateError) throw updateError;
+
+    res.json({ record: newRecord, status: 'SUCCESS' });
+  } catch (err) {
+    console.error("Grab Error:", err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// 3. Catch-all handler for React Routing
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+// --- TELEGRAM BOT ---
+const bot = new Telegraf(token);
+
+bot.command('start', (ctx) => {
+  const startPayload = ctx.payload; 
+  
+  let message = '🧧 Welcome to Lucky Red Packet!';
+  let buttonText = '💰 Create Red Packet';
+  let url = webAppUrl || 'https://google.com';
+
+  if (startPayload) {
+    message = '🧧 Someone sent you a Red Packet! Click below to open it.';
+    buttonText = '💰 Open Red Packet';
+    const separator = url.includes('?') ? '&' : '?';
+    url = `${url}${separator}startapp=${startPayload}`;
+  }
+
+  ctx.reply(message, Markup.keyboard([
+    Markup.button.webApp(buttonText, url)
+  ]).resize());
+});
+
+// Set the menu button
+bot.telegram.setChatMenuButton({
+  menuButton: {
+    type: 'web_app',
+    text: '🧧 Lucky Packet',
+    web_app: { url: webAppUrl || 'https://google.com' }
+  }
+}).catch(e => console.error("Failed to set menu button:", e));
+
+bot.launch().then(() => {
+  console.log('Telegram Bot launched');
+}).catch(err => console.error('Bot launch failed:', err));
+
+// Start Express Server
+app.listen(PORT, () => {
+  console.log(`Web Server running on port ${PORT}`);
+});
+
+// Graceful Stop
+// @ts-ignore
+process.once('SIGINT', () => { bot.stop('SIGINT'); process.exit(); });
+// @ts-ignore
+process.once('SIGTERM', () => { bot.stop('SIGTERM'); process.exit(); });

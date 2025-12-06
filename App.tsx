@@ -1,57 +1,33 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameStage, RedPacketConfig, PacketRecord, User } from './types';
-import { generateRedPacketResults } from './services/redPacketLogic';
 import { CreateStep } from './components/CreateStep';
 import { OpenStep } from './components/OpenStep';
 import { ResultStep } from './components/ResultStep';
-import { playCoinSound, playFanfareSound } from './services/soundService';
+import { api } from './services/api';
+import { Share2 } from 'lucide-react';
 
-// Mock Data for Sender (In a real app, this would come from the URL params or backend)
-const SENDER: User = {
-  id: 'u1',
-  name: 'Lucky You',
-  avatarUrl: 'https://picsum.photos/id/64/200/200',
-};
-
-// Default fallback if opened outside Telegram
 const FALLBACK_USER: User = {
-  id: 'u_guest',
+  id: 'u_' + Math.floor(Math.random() * 10000),
   name: 'Guest User',
   avatarUrl: 'https://ui-avatars.com/api/?name=Guest&background=random',
 };
 
-// Mock Other Users for simulation
-const MOCK_USERS: User[] = [
-  { id: 'u2', name: 'Alice', avatarUrl: 'https://picsum.photos/id/237/200/200' },
-  { id: 'u3', name: 'Bob', avatarUrl: 'https://picsum.photos/id/238/200/200' },
-  { id: 'u4', name: 'Charlie', avatarUrl: 'https://picsum.photos/id/239/200/200' },
-  { id: 'u5', name: 'Dave', avatarUrl: 'https://picsum.photos/id/240/200/200' },
-  { id: 'u6', name: 'Eve', avatarUrl: 'https://picsum.photos/id/241/200/200' },
-  { id: 'u7', name: 'Frank', avatarUrl: 'https://picsum.photos/id/242/200/200' },
-];
-
 const App: React.FC = () => {
-  const [stage, setStage] = useState<GameStage>(GameStage.CREATE);
+  const [stage, setStage] = useState<GameStage>(GameStage.LOADING);
+  const [packetId, setPacketId] = useState<string | null>(null);
   const [config, setConfig] = useState<RedPacketConfig | null>(null);
-  const [precomputedResults, setPrecomputedResults] = useState<number[]>([]);
   const [records, setRecords] = useState<PacketRecord[]>([]);
-  
-  // State for the current user (read from Telegram)
   const [currentUser, setCurrentUser] = useState<User>(FALLBACK_USER);
+  const [senderInfo, setSenderInfo] = useState<User>(FALLBACK_USER);
 
-  // Initialize Telegram Web App
+  // 1. Initialize Telegram & Check for Packet ID in URL
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
-    const urlParams = new URLSearchParams(window.location.search);
-    const debugUser = urlParams.get('user');
-
     if (tg) {
       tg.ready();
       tg.expand();
-      tg.setHeaderColor('#dc2626'); // red-600
+      tg.setHeaderColor('#dc2626');
 
-      // Read real user data from Telegram
       const user = tg.initDataUnsafe?.user;
       if (user) {
         setCurrentUser({
@@ -59,125 +35,169 @@ const App: React.FC = () => {
           name: [user.first_name, user.last_name].filter(Boolean).join(' '),
           avatarUrl: user.photo_url || `https://ui-avatars.com/api/?name=${user.first_name}&background=random`
         });
-        return;
       }
-    }
-    
-    // If no Telegram user found, check for debug param
-    if (debugUser) {
-      setCurrentUser({
-          id: 'u_debug_' + Date.now(),
-          name: debugUser,
-          avatarUrl: `https://ui-avatars.com/api/?name=${debugUser}&background=random`
-      });
+
+      // Check start_param (e.g., ?startapp=packet_uuid)
+      const startParam = tg.initDataUnsafe?.start_param;
+      if (startParam) {
+        loadPacket(startParam);
+      } else {
+        setStage(GameStage.CREATE);
+      }
+    } else {
+      // Debugging in browser without Telegram
+      const urlParams = new URLSearchParams(window.location.search);
+      const pid = urlParams.get('startapp') || urlParams.get('packetId');
+      if (pid) {
+        loadPacket(pid);
+      } else {
+        setStage(GameStage.CREATE);
+      }
     }
   }, []);
 
-  // 1. Create Stage Handler
-  const handleCreate = (newConfig: RedPacketConfig) => {
-    setConfig(newConfig);
-    // Generate the math logic immediately upon creation
-    const amounts = generateRedPacketResults(newConfig.totalAmount, newConfig.totalShares);
-    setPrecomputedResults(amounts);
-    setRecords([]); // Clear old records
-    setStage(GameStage.CLOSED);
-    
-    // Optional: Trigger haptic feedback
-    (window as any).Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
-  };
-
-  // 2. Open Stage Handler
-  const handleOpen = () => {
-    if (!config || precomputedResults.length === 0) return;
-
-    // "Draw" a result for the current user (First one is reserved for current user in this logic)
-    const myAmount = precomputedResults[0];
-    const maxAmount = Math.max(...precomputedResults);
-    
-    // Create record for current user
-    const myRecord: PacketRecord = {
-      userId: currentUser.id,
-      userName: currentUser.name,
-      avatarUrl: currentUser.avatarUrl,
-      amount: myAmount,
-      isBestLuck: true, // Initially best because only one
-      timestamp: Date.now(),
-    };
-
-    setRecords([myRecord]);
-    setStage(GameStage.RESULT);
-    
-    // Play sound based on luck
-    if (myAmount >= maxAmount) {
-      playFanfareSound();
-    } else {
-      playCoinSound();
-    }
-    
-    // Optional: Trigger haptic feedback
-    (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred('heavy');
-  };
-
-  // 3. Real-time Simulation Effect
-  // This effect simulates other users opening the packet over time
+  // 2. Poll for updates if we are in Result view (Real-time updates)
   useEffect(() => {
-    if (stage === GameStage.RESULT && config && records.length < config.totalShares) {
-      // Set a random delay to simulate real network/user activity
-      const delay = Math.random() * 1500 + 800; // 0.8s - 2.3s
-
-      const timeoutId = setTimeout(() => {
-        const nextIndex = records.length;
-        // Safety check
-        if (nextIndex >= precomputedResults.length) return;
-
-        const amount = precomputedResults[nextIndex];
-        // Cycle through mock users
-        const mockUser = MOCK_USERS[(nextIndex - 1) % MOCK_USERS.length];
-
-        const newRecord: PacketRecord = {
-          userId: `mock_${Date.now()}_${nextIndex}`,
-          userName: mockUser.name,
-          avatarUrl: mockUser.avatarUrl,
-          amount: amount,
-          isBestLuck: false, // Will be recalculated
-          timestamp: Date.now(),
-        };
-
-        setRecords(prev => {
-          const nextRecords = [...prev, newRecord];
-          // Recalculate Best Luck (King)
-          const maxAmount = Math.max(...nextRecords.map(r => r.amount));
-          return nextRecords.map(r => ({
-            ...r,
-            isBestLuck: r.amount === maxAmount && r.amount > 0
-          }));
-        });
-
-      }, delay);
-
-      return () => clearTimeout(timeoutId);
+    let interval: any;
+    if (stage === GameStage.RESULT && packetId) {
+      interval = setInterval(() => {
+        api.getPacket(packetId).then(data => {
+          setRecords(recalculateBestLuck(data.records));
+        }).catch(console.error);
+      }, 3000); // Poll every 3 seconds
     }
-  }, [stage, records, config, precomputedResults]);
+    return () => clearInterval(interval);
+  }, [stage, packetId]);
+
+  const recalculateBestLuck = (recs: PacketRecord[]) => {
+    if (recs.length === 0) return [];
+    const maxAmount = Math.max(...recs.map(r => r.amount));
+    return recs.map(r => ({
+      ...r,
+      isBestLuck: r.amount === maxAmount && r.amount > 0
+    }));
+  };
+
+  const loadPacket = async (id: string) => {
+    setStage(GameStage.LOADING);
+    try {
+      const data = await api.getPacket(id);
+      setPacketId(id);
+      setConfig(data.config);
+      setRecords(recalculateBestLuck(data.records));
+      
+      setSenderInfo({
+        id: data.creatorId, 
+        name: 'A Friend', 
+        avatarUrl: 'https://ui-avatars.com/api/?name=Friend&background=random'
+      });
+
+      // Check if current user already grabbed it
+      const myRecord = data.records.find(r => r.userId === currentUser.id);
+      if (myRecord) {
+        setStage(GameStage.RESULT);
+      } else if (data.isFinished) {
+         setStage(GameStage.RESULT); // Too late
+      } else {
+        setStage(GameStage.CLOSED); // Ready to open
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Packet not found or expired.");
+      setStage(GameStage.CREATE);
+    }
+  };
+
+  const handleCreate = async (newConfig: RedPacketConfig) => {
+    setStage(GameStage.LOADING);
+    try {
+      const { id } = await api.createPacket(newConfig, currentUser.id);
+      
+      // Immediately load the packet we just created
+      setPacketId(id);
+      setConfig(newConfig);
+      setRecords([]);
+      setStage(GameStage.CLOSED);
+      
+    } catch (e) {
+      console.error(e);
+      alert("Failed to create packet. Check connection.");
+      setStage(GameStage.CREATE);
+    }
+  };
+
+  const handleOpen = async () => {
+    if (!packetId) return;
+
+    try {
+      const { record, status } = await api.grabPacket(packetId, currentUser);
+      
+      if (status === 'SUCCESS' && record) {
+        setRecords(prev => recalculateBestLuck([...prev, record]));
+        setStage(GameStage.RESULT);
+        (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred('heavy');
+      } else if (status === 'ALREADY_GRABBED') {
+        // Refresh full list
+        const data = await api.getPacket(packetId);
+        setRecords(recalculateBestLuck(data.records));
+        setStage(GameStage.RESULT);
+      } else if (status === 'EMPTY') {
+        alert("Too slow! Red packet is empty.");
+        setStage(GameStage.RESULT);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Network error occurred.");
+    }
+  };
+
+  const handleShare = () => {
+    if (!packetId) return;
+    const tg = (window as any).Telegram?.WebApp;
+    
+    // Construct the direct link to the app with the packet ID
+    // Format: https://t.me/MyBot/appname?startapp=packetId
+    // Note: You need to replace 'YourBotName' and 'AppName' in production environment vars or manually
+    const shareUrl = `https://t.me/share/url?url=${window.location.href}`;
+
+    if (tg) {
+       // Option 1: Share via specific message with a button
+       // tg.switchInlineQuery(packetId, ['users', 'groups']); 
+       
+       // Option 2 (Better for growth): Open native share dialog with the deep link
+       const message = `🧧 I sent a Red Packet! Click to open.`;
+       tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(message)}`);
+    } else {
+        navigator.clipboard.writeText(shareUrl);
+        alert('Link copied to clipboard: ' + shareUrl);
+    }
+  };
 
   const handleReset = () => {
     setStage(GameStage.CREATE);
+    setPacketId(null);
     setConfig(null);
-    setPrecomputedResults([]);
     setRecords([]);
   };
 
-  // Render view based on stage
+  if (stage === GameStage.LOADING) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500"></div>
+      </div>
+    );
+  }
+
   if (stage === GameStage.CREATE) {
     return <CreateStep onCreate={handleCreate} />;
   }
 
   if (stage === GameStage.CLOSED || stage === GameStage.OPENING) {
-    if (!config) { handleReset(); return null; }
-    
+    if (!config) return null;
     return (
       <OpenStep 
         config={config} 
-        sender={SENDER} 
+        sender={senderInfo} 
         onOpen={handleOpen} 
       />
     );
@@ -186,12 +206,24 @@ const App: React.FC = () => {
   if (stage === GameStage.RESULT) {
     if (!config) return null;
     return (
-      <ResultStep 
-        config={config} 
-        records={records} 
-        currentUserId={currentUser.id}
-        onReset={handleReset}
-      />
+      <div className="relative h-full">
+         <ResultStep 
+            config={config} 
+            records={records} 
+            currentUserId={currentUser.id}
+            onReset={handleReset}
+          />
+          {/* Floating Share Button for the Creator/Winner */}
+          <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-50 animate-bounce">
+             <button 
+                onClick={handleShare}
+                className="bg-green-600 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2 hover:bg-green-500 transition-colors"
+             >
+                <Share2 size={20} />
+                Share Packet
+             </button>
+          </div>
+      </div>
     );
   }
 
