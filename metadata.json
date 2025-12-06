@@ -1,0 +1,5 @@
+{
+  "name": "Lucky Red Packet",
+  "description": "A festive Red Packet (Hongbao) web app with real-time simulation, leaderboards, and AI-generated fortune messages.",
+  "requestFramePermissions": []
+}
