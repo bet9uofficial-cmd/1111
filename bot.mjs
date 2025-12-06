@@ -58,26 +58,19 @@ const generateAmounts = (total, shares) => {
   return results.sort(() => Math.random() - 0.5); // Shuffle
 };
 
-// --- HELPER: Async Handler Wrapper ---
-// Wraps async route handlers to catch errors and pass them to next(),
-// satisfying Express type definitions that expect void return.
-const asyncHandler = (fn) => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
-
 // --- EXPRESS SERVER (API) ---
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // 1. Serve Static Files
-// Added explicit mount point '/' to satisfy TypeScript overload resolution for app.use
-app.use('/', express.static(path.join(__dirname, 'dist')));
+// Use express.static directly. Passing it as middleware without path defaults to '/'
+app.use(express.static(path.join(__dirname, 'dist')));
 
 // 2. API Routes
 
 // Create Packet
-app.post('/api/create', asyncHandler(async (req, res) => {
+app.post('/api/create', async (req, res) => {
   try {
     const { totalAmount, totalShares, wishing, creatorId } = req.body;
     const id = uuidv4();
@@ -103,10 +96,10 @@ app.post('/api/create', asyncHandler(async (req, res) => {
     console.error("Create Error:", err);
     res.status(500).json({ error: 'Database error' });
   }
-}));
+});
 
 // Get Packet Info
-app.get('/api/packet/:id', asyncHandler(async (req, res) => {
+app.get('/api/packet/:id', async (req, res) => {
   try {
     if (!supabase) {
       res.status(500).json({ error: 'DB not configured' });
@@ -139,10 +132,10 @@ app.get('/api/packet/:id', asyncHandler(async (req, res) => {
     console.error("Get Error:", err);
     res.status(500).json({ error: 'Database error' });
   }
-}));
+});
 
 // Grab Packet
-app.post('/api/packet/:id/grab', asyncHandler(async (req, res) => {
+app.post('/api/packet/:id/grab', async (req, res) => {
   try {
     if (!supabase) {
       res.status(500).json({ error: 'DB not configured' });
@@ -206,7 +199,7 @@ app.post('/api/packet/:id/grab', asyncHandler(async (req, res) => {
     console.error("Grab Error:", err);
     res.status(500).json({ error: 'Database error' });
   }
-}));
+});
 
 // 3. Catch-all handler for React Routing
 app.get('*', (req, res) => {
@@ -234,6 +227,15 @@ bot.command('start', (ctx) => {
     Markup.button.webApp(buttonText, url)
   ]).resize());
 });
+
+// Set the menu button
+bot.telegram.setChatMenuButton({
+  menuButton: {
+    type: 'web_app',
+    text: '🧧 Lucky Packet',
+    web_app: { url: webAppUrl || 'https://1111-pearl-mu.vercel.app/' }
+  }
+}).catch(e => console.error("Failed to set menu button:", e));
 
 bot.launch().then(() => {
   console.log('Telegram Bot launched');
