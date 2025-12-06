@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameStage, RedPacketConfig, PacketRecord, User } from './types';
 import { generateRedPacketResults } from './services/redPacketLogic';
 import { CreateStep } from './components/CreateStep';
 import { OpenStep } from './components/OpenStep';
 import { ResultStep } from './components/ResultStep';
+import { playCoinSound, playFanfareSound } from './services/soundService';
 
 // Mock Data for Sender (In a real app, this would come from the URL params or backend)
 const SENDER: User = {
@@ -90,6 +92,7 @@ const App: React.FC = () => {
 
     // "Draw" a result for the current user (First one is reserved for current user in this logic)
     const myAmount = precomputedResults[0];
+    const maxAmount = Math.max(...precomputedResults);
     
     // Create record for current user
     const myRecord: PacketRecord = {
@@ -103,6 +106,13 @@ const App: React.FC = () => {
 
     setRecords([myRecord]);
     setStage(GameStage.RESULT);
+    
+    // Play sound based on luck
+    if (myAmount >= maxAmount) {
+      playFanfareSound();
+    } else {
+      playCoinSound();
+    }
     
     // Optional: Trigger haptic feedback
     (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred('heavy');

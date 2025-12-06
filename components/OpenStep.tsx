@@ -1,5 +1,7 @@
+
 import React, { useState } from 'react';
 import { RedPacketConfig, User } from '../types';
+import { playOpenSound } from '../services/soundService';
 
 interface Props {
   config: RedPacketConfig;
@@ -12,6 +14,7 @@ export const OpenStep: React.FC<Props> = ({ config, sender, onOpen }) => {
 
   const handleOpen = () => {
     setIsOpening(true);
+    playOpenSound();
     // Simulate network delay and animation time
     setTimeout(() => {
       onOpen();
