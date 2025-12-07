@@ -12,7 +12,14 @@
     "lucide-react": "^0.556.0",
     "react": "^19.2.1",
     "@google/genai": "^1.31.0",
-    "react-dom": "^19.2.1"
+    "react-dom": "^19.2.1",
+    "uuid": "^13.0.0",
+    "path": "^0.12.7",
+    "@supabase/supabase-js": "^2.86.2",
+    "url": "^0.11.4",
+    "express": "^5.2.1",
+    "cors": "^2.8.5",
+    "telegraf": "^4.16.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

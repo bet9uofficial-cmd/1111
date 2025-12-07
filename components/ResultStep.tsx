@@ -1,17 +1,17 @@
-
 import React, { useEffect, useState } from 'react';
 import { RedPacketConfig, PacketRecord, AIAnalysis } from '../types';
-import { Crown, Star, Share2, RefreshCw, CheckCheck, Copy } from 'lucide-react';
+import { Crown, Star, Share2, RefreshCw, CheckCheck } from 'lucide-react';
 import { generateFortune } from '../services/geminiService';
 
 interface Props {
   config: RedPacketConfig;
   records: PacketRecord[];
   currentUserId: string;
+  packetId: string;
   onReset: () => void;
 }
 
-export const ResultStep: React.FC<Props> = ({ config, records, currentUserId, onReset }) => {
+export const ResultStep: React.FC<Props> = ({ config, records, currentUserId, packetId, onReset }) => {
   const [aiFortune, setAiFortune] = useState<AIAnalysis | null>(null);
   const [loadingFortune, setLoadingFortune] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -32,17 +32,30 @@ export const ResultStep: React.FC<Props> = ({ config, records, currentUserId, on
   }, [myRecord?.amount, myRecord?.userId]); 
 
   const handleShare = () => {
-    // Generate the shareable link with the config encoded
-    const payload = btoa(JSON.stringify(config));
-    const shareUrl = `${window.location.origin}${window.location.pathname}?payload=${payload}`;
+    // 1. Construct Telegram Share URL
+    // Web Share Link
+    const webLink = `${window.location.origin}${window.location.pathname}?startapp=${packetId}`;
     
-    // Copy to clipboard
-    navigator.clipboard.writeText(shareUrl).then(() => {
+    // Telegram Share Link
+    // format: https://t.me/share/url?url={link}&text={text}
+    const shareText = encodeURIComponent(`🧧 I sent a Red Packet! ${config.wishing}`);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(webLink)}&text=${shareText}`;
+
+    // 2. Try to use Telegram WebApp "Switch Inline Query"
+    // This allows selecting a group and sending a button directly.
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg && tg.initData) {
+       // We pass the packetId as the query. The bot's inline_query handler will catch this
+       // and return a nice button message.
+       tg.switchInlineQuery(packetId, ['users', 'groups']);
+       return;
+    }
+
+    // 3. Fallback: Copy to clipboard if not in Telegram or API not available
+    navigator.clipboard.writeText(webLink).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      
-      // If in Telegram, we can also try to open the share sheet (optional enhancement)
-      // (window as any).Telegram?.WebApp?.switchInlineQuery("Sent a Red Packet", ['users', 'groups']);
     }).catch(err => {
       console.error('Failed to copy', err);
     });
@@ -59,39 +72,47 @@ export const ResultStep: React.FC<Props> = ({ config, records, currentUserId, on
           
           <div className="flex flex-col items-center px-4 -mt-10">
             <img 
-              src={myRecord?.avatarUrl || "https://picsum.photos/100/100"} 
+              src={myRecord?.avatarUrl || "https://ui-avatars.com/api/?name=User&background=random"} 
               className="w-16 h-16 rounded-full border-2 border-white shadow-md z-10"
               alt="Me"
             />
-            <h2 className="mt-2 text-gray-900 font-bold text-lg">{myRecord?.userName}</h2>
+            <h2 className="mt-2 text-gray-900 font-bold text-lg">{myRecord?.userName || 'You'}</h2>
             
             <div className="mt-6 text-center">
               <p className="text-gray-500 text-sm">You won</p>
               <h1 className="text-5xl font-bold text-gray-900 mt-1 tracking-tighter">
-                {myRecord?.amount.toFixed(2)}
+                {myRecord ? myRecord.amount.toFixed(2) : '0.00'}
                 <span className="text-xl text-gray-500 ml-1">USD</span>
               </h1>
             </div>
 
             {/* AI Fortune Section */}
-            <div className="mt-6 w-full max-w-sm px-2">
-                {loadingFortune ? (
-                  <div className="bg-yellow-50 p-3 rounded-lg flex items-center justify-center gap-2 text-yellow-700 text-sm animate-pulse">
-                    <Star size={16} className="animate-spin" />
-                    Consulting the AI Spirits...
-                  </div>
-                ) : aiFortune ? (
-                  <div className="bg-gradient-to-br from-yellow-50 to-orange-50 border border-yellow-200 p-4 rounded-xl shadow-sm relative overflow-hidden animate-fade-in-up">
-                    <div className="absolute top-0 right-0 p-1 opacity-10">
-                      <Crown size={64} />
+            {myRecord && (
+              <div className="mt-6 w-full max-w-sm px-2">
+                  {loadingFortune ? (
+                    <div className="bg-yellow-50 p-3 rounded-lg flex items-center justify-center gap-2 text-yellow-700 text-sm animate-pulse">
+                      <Star size={16} className="animate-spin" />
+                      Consulting the AI Spirits...
                     </div>
-                    <h3 className="text-orange-800 font-bold text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
-                      <SparklesIcon /> Gemini Fortune: {aiFortune.luckLevel}
-                    </h3>
-                    <p className="text-gray-800 text-sm italic font-medium">"{aiFortune.message}"</p>
-                  </div>
-                ) : null}
-            </div>
+                  ) : aiFortune ? (
+                    <div className="bg-gradient-to-br from-yellow-50 to-orange-50 border border-yellow-200 p-4 rounded-xl shadow-sm relative overflow-hidden animate-fade-in-up">
+                      <div className="absolute top-0 right-0 p-1 opacity-10">
+                        <Crown size={64} />
+                      </div>
+                      <h3 className="text-orange-800 font-bold text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <SparklesIcon /> Gemini Fortune: {aiFortune.luckLevel}
+                      </h3>
+                      <p className="text-gray-800 text-sm italic font-medium">"{aiFortune.message}"</p>
+                    </div>
+                  ) : null}
+              </div>
+            )}
+            
+            {!myRecord && (
+               <div className="mt-4 text-gray-500 text-sm">
+                 Better luck next time!
+               </div>
+            )}
           </div>
         </div>
 

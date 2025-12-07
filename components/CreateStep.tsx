@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { RedPacketConfig } from '../types';
-import { Sparkles, ArrowRight } from 'lucide-react';
+import { Sparkles, ArrowRight, Loader2 } from 'lucide-react';
 
 interface Props {
   onCreate: (config: RedPacketConfig) => void;
@@ -10,13 +10,17 @@ export const CreateStep: React.FC<Props> = ({ onCreate }) => {
   const [totalAmount, setTotalAmount] = useState<string>('10.00');
   const [shares, setShares] = useState<string>('5');
   const [wishing, setWishing] = useState('Best Wishes!');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(totalAmount);
     const count = parseInt(shares);
+    
     if (amount > 0 && count > 0) {
-      onCreate({ totalAmount: amount, totalShares: count, wishing });
+      setIsSubmitting(true);
+      await onCreate({ totalAmount: amount, totalShares: count, wishing });
+      // We don't set submitting false here because the parent component will unmount this view
     }
   };
 
@@ -45,6 +49,7 @@ export const CreateStep: React.FC<Props> = ({ onCreate }) => {
                 onChange={(e) => setTotalAmount(e.target.value)}
                 className="w-full p-4 bg-gray-50 rounded-xl text-lg font-semibold border-2 border-transparent focus:border-red-500 focus:bg-white outline-none transition-all text-gray-900"
                 placeholder="0.00"
+                disabled={isSubmitting}
               />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
             </div>
@@ -59,6 +64,7 @@ export const CreateStep: React.FC<Props> = ({ onCreate }) => {
               onChange={(e) => setShares(e.target.value)}
               className="w-full p-4 bg-gray-50 rounded-xl text-lg font-semibold border-2 border-transparent focus:border-red-500 focus:bg-white outline-none transition-all text-gray-900"
               placeholder="Number of shares"
+              disabled={isSubmitting}
             />
           </div>
 
@@ -70,15 +76,26 @@ export const CreateStep: React.FC<Props> = ({ onCreate }) => {
               className="w-full p-4 bg-gray-50 rounded-xl text-base border-2 border-transparent focus:border-red-500 focus:bg-white outline-none transition-all resize-none text-gray-900"
               rows={2}
               placeholder="Say something nice..."
+              disabled={isSubmitting}
             />
           </div>
 
           <button
             type="submit"
-            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-xl shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2"
+            disabled={isSubmitting}
+            className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-bold py-4 rounded-xl shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2"
           >
-            Prepare Red Packet
-            <ArrowRight size={20} />
+            {isSubmitting ? (
+              <>
+                <Loader2 size={20} className="animate-spin" />
+                Preparing...
+              </>
+            ) : (
+              <>
+                Prepare Red Packet
+                <ArrowRight size={20} />
+              </>
+            )}
           </button>
         </form>
       </div>
